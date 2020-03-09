@@ -1,0 +1,199 @@
+---
+title: "Projet de clustering"
+author: "DIARRASSOUBA SAKARIA"
+date: "23/01/2020"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introduction
+
+
+Dans cette analyse, nous utiliserons les données sur les clients des centres commerciaux qui contiennent des données de base comme l'identité du client, l'âge, le sexe, le revenu annuel et le score des dépenses. L'objectif de cette analyse est d'identifier le segment de clientèle via la Carte de Kohonen, afin de comprendre quel est le segment de clientèle qui devient la cible de l'équipe marketing pour planifier les stratégies de marketing.
+
+
+# Importation des données
+```{r comment=NA,echo=FALSE,include=F}
+library(MASS)
+library(kohonen)
+library(dplyr)
+library(ggpubr)
+library(FactoMineR)
+library(ggplot2)
+#library("funModeling")
+mall =read.csv("Mall_Customers.csv", header = TRUE)
+cust=read.csv("cust_segmentation.csv",header = T)
+mall
+cust
+
+mallCust=data.frame(mall[1],mall[2],mall[3],mall[4],mall[5])
+names(mallCust)=c("ID","Sexe","Age","revenus_annuels","Score_dépence")
+
+
+
+```
+
+```{r}
+head(mallCust)
+```
+
+
+Avant d’appliquer l’algorithme des cartes de Kohonen, il faut s’assurer de la qualité des données. Toutes les données doivent être sous format numérique. Si les données présentent des variables catégorielles, il faudra remplacer chaque modalité d’une variable par une indicatrice (1 si l’individu a la modalité et 0 sinon).
+
+
+Choix des revenus et scores dépenses annuels pour le regroupement des sujets et l'échelle des données
+
+#le Kmeans
+
+## La méthode Elbow pour le bombre de cluster 
+Trouver le meilleur k pour le Kmeans
+```{r comment=NA,echo=FALSE,include=FALSE}
+library(NbClust)
+library("factoextra")
+cust <-scale(mallCust[,c(4,5)])
+wss <- function(data, maxCluster = 10) {
+    # Initialize within sum of squares
+    SSw <- (nrow(data) - 1) * sum(apply(data, 2, var))
+    SSw <- vector()
+    for (i in 2:maxCluster) {
+        SSw[i] <- sum(kmeans(data, centers = i)$withinss)
+    }
+  plot(1:maxCluster, SSw, type = "o", xlab = "Number of Clusters", ylab = "Within groups sum of squares", pch=19)
+    abline(v=5, col="blue")
+}
+set.seed(100)
+wss(cust)
+# Silhouette method
+fviz_nbclust(mallCust[, 4:5], kmeans, method = "silhouette")+
+  labs(subtitle = "Silhouette method")
+
+```
+D'après les résultats de les méthodes du Elbow (Coude), Silhouette, on peut voir que le coude est un cercle de flexion k=5, donc k=5 est le nombre de grappes que nous utilisons dans ce cas de notre analyse.
+```{r}
+cust.KM<-kmeans(cust,4)  
+ggplot(mallCust[,c(4,5)], aes(x = revenus_annuels, y = Score_dépence)) + 
+    geom_point(stat = "identity", aes(color = as.factor(cust.KM$cluster))) +
+    scale_color_discrete(name=" ",
+                         breaks=c("1", "2", "3", "4", "5"),
+                         labels=c("Cluster 1", "Cluster 2", "Cluster 3", "Cluster 4", "Cluster 5")) +
+    ggtitle(" Cluster des clients")+
+  xlab("revenus_annuels")+ylab("Score_dépence")
+```
+ Ajoutons la colonne cluster 
+```{r comment=NA,echo=FALSE,include=FALSE}
+# Adding 'Cluster' column 
+mallCust$Cluster <- cust.KM$cluster
+head(mallCust)
+```
+
+Avant d’appliquer l’algorithme des cartes de Kohonen, il faut s’assurer de la qualité des données. Toutes les données doivent être sous format numérique. Si les données présentent des variables catégorielles, il faudra remplacer chaque modalité d’une variable par une indicatrice (1 si l’individu a la modalité et 0 sinon).
+
+```{r comment=NA,echo=FALSE,include=FALSE}
+# Normalisation des données
+
+clust.scale <- scale(mallCust[,c(4,5)], center = T, scale = T)
+#clust.scale 
+# Choix du type de carte et de sa taille
+som.grid <- somgrid(5, 4, topo="hexagonal", neighbourhood.fct="bubble")
+# Apprentissage
+som.model <- som(clust.scale, grid =som.grid, rlen=1000, alpha=c(0.05,0.01), keep.data = TRUE)
+# Palette de couleur pour l'affichage des cartes
+coolBlueHotRed <- function(n, alpha = 1) {rainbow(n, end=4/6, alpha=alpha)[n:1]}
+ 
+```
+
+# La phase d’apprentissage consiste à trouver les paramètres du modèle optimal :
+
+**Grid : la grille, sa taille, sa forme, le type fonctionde voisinage, etc…** 
+
+**Rlen : le nombre de fois que l’ensemble des données sera présenté au réseau** 
+
+**Alpha : le pas de l’apprentissage pour contrôler la vitesse d’apprentissage** 
+
+**Radius : le rayon du voisinage** 
+
+**Init : les valeurs initiales des vecteurs référents**
+
+…
+La librairie kohonen de R présente plusieurs types de visualisation permettant de mesurer de la pertinence de la carte obtenue.
+
+La carte coloriée en fonction de la cardinalité (le nombre d’individus capturés par un neurone) des neurones permet de mesurer la qualité de carte. La distribution de la cardinalité doit être uniforme. Des neurones présentant des cardinalités assez importantes montrent que la taille de carte est petite. De même, la présence de beaucoup de neurones avec des cardinalités nulles suggère que la carte est trop grande.
+
+```{r}
+# Affichage des cartes
+plot(som.model, type="count", main="Carte coloriée en fonction de la cardinalité des neurones", palette.name=coolBlueHotRed)
+
+```
+\newline
+La carte des vecteurs référents permet de visualiser le profil d’individus capturés par les neurones 
+```{r}
+# Affichage des vecteurs référents
+plot(som.model, type="codes", codeRendering="segments", main="Profil des vecteurs référents", palette.name=coolBlueHotRed)
+```
+\newline
+
+La carte des poids par dimension d’entrée permet de regarder comment chaque zone de la carte réagit par rapport à chaque variable, ce qui sera très utile lorsque l’on interprétera les classes obtenues après classification. Elle permet également d’étudier les corrélations entre les variables au sens de la carte des individus.
+
+
+On peut aussi représenter les neurones dans l’espace des données à l’aide des vecteurs référents. Cela permet de voir la qualité de la quantification vectorielle de l’espace d’entrée.
+
+```{r}
+df = data.frame(som.model$codes)
+df1=data.frame(df[,1],df[,2])
+colnames(df1) = c("X", "Y")
+
+df1$Cluster = "CODEBOOK"
+
+dfA = data.frame(clust.scale) %>% setNames(nm=c("X", "Y"))
+dfA$Cluster = mallCust[,c(4,5,6)]$Cluster
+
+df = rbind(dfA,df1)
+colours = c('blue', 'green', 'red','magenta','orange', 'black')
+qplot(x = X, y = Y, color = Cluster, data = df, geom = "point") + scale_color_manual(values=colours)+ ggtitle("Ajout des vecteurs référents au nuage de points")
+
+```
+
+La dernière partie de l’exemple consiste à appliquer la classification automatique des données à partir des cartes de Kohonen. L’idée est de retrouver les trois groupes 5 qu’on a créés au début du l’exemple.
+
+La décroissance de l’inertie intra-classe suggère un nombre de classe égale à 5
+```{r}
+# On fixe le nombre de classes à 5
+data=mallCust[,c(4,5,6)]
+code.books = data.frame(som.model$codes) %>% setNames(nm=c("X", "Y"))
+model.kmeans <- kmeans(x = code.books, centers = 5, nstart=100)
+plot(som.model, type="mapping",
+bgcol = c('blue', 'green', 'red','magenta','orange')[model.kmeans$cluster],
+labels = data$Cluster,
+main = "Les clusters sur la carte de kohonen")
+add.cluster.boundaries(som.model, clustering = model.kmeans$cluster)
+```
+
+On retrouve bien les cinq groupes définis au début l’exemple. Les neurones fournissent une classification plus fine que les k-means.
+
+Les cartes topologiques de Kohonen constituent un outil puissant de réduction de dimension et de classification automatique. Elles peuvent être vues comme :
+
+**Une extension non linéaire de l’ACP (Analyse en Composantes Principales) dans le cadre d’une réduction de dimension
+**Une extension non linéaire de K-means dans le cadre d’une classification automatique
+
+
+# Interprétation pour le groupe/segment de clients :
+
+**Cluster 1. Les clients ayant un revenu annuel élevé mais un score de dépenses faible.**
+
+**Cluster 2. Clients ayant un revenu annuel moyen et un score moyen en matière de dépenses.**
+
+**Cluster 3. Clients ayant un faible revenu annuel et un faible niveau de dépenses.**
+
+**Cluster 4. Clients ayant un revenu annuel faible mais un niveau de dépenses élevé.**
+
+**Cluster 5. Clients ayant un revenu annuel élevé et un score élevé en matière de dépenses.**
+
+
+
